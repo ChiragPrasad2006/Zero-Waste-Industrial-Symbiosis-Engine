@@ -14,11 +14,15 @@ export default function PostCard({ post, onContactSeller, onDelete, isAdmin }) {
         <div className="post-meta">
           <span>Purpose: {post.purpose}</span>
           <span>
-            From Rs. {post.priceMin} / {post.quantityUnit}
+            Rate / Unit: Rs. {post.priceMin} / {post.quantityUnit}
           </span>
           <span>
-            Qty: {post.quantityValue} {post.quantityUnit}
+            Quantity: {post.quantityValue} {post.quantityUnit}
           </span>
+        </div>
+        <div className="post-meta">
+          <span>Date added: {new Date(post.createdAt).toLocaleDateString()}</span>
+          {post.seller?.location && <span>Location: {post.seller.location}</span>}
         </div>
         {post.seller && <p className="seller-name">Seller: {post.seller.username}</p>}
         <div className="post-card__actions">
@@ -30,4 +34,3 @@ export default function PostCard({ post, onContactSeller, onDelete, isAdmin }) {
     </article>
   );
 }
-

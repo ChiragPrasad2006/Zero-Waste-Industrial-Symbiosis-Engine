@@ -1,14 +1,36 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { login, register, token, loading: authLoading } = useAuth();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ username: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const nextMode = searchParams.get('mode');
+    if (nextMode === 'login' || nextMode === 'signup') {
+      setMode(nextMode);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (token && !authLoading) {
+      navigate('/app', { replace: true });
+    }
+  }, [token, authLoading, navigate]);
+
+  useEffect(() => {
+    setError('');
+    setForm((prev) => ({
+      ...prev,
+      password: ''
+    }));
+  }, [mode]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -16,9 +38,13 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await register(form);
+        await register({
+          username: form.username.trim(),
+          email: form.email.trim().toLowerCase(),
+          password: form.password
+        });
       } else {
-        await login({ email: form.email, password: form.password });
+        await login({ email: form.email.trim().toLowerCase(), username: form.email.trim(), password: form.password });
       }
       navigate('/app');
     } catch (submitError) {
@@ -31,6 +57,9 @@ export default function AuthPage() {
   return (
     <main className="auth-page">
       <form className="auth-card" onSubmit={submit}>
+        <Link to="/" className="back-link">
+          Back to start page
+        </Link>
         <h1>{mode === 'login' ? 'Welcome Back' : 'Create Your Account'}</h1>
         <p>Factories, recyclers, and industrial buyers can collaborate here.</p>
 
@@ -67,4 +96,3 @@ export default function AuthPage() {
     </main>
   );
 }
-

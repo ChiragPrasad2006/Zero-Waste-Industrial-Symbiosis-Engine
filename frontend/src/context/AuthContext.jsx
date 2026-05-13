@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('zw_token', authToken);
     setToken(authToken);
     setUser(nextUser);
+    setLoading(true);
   };
 
   const login = async (payload) => {
@@ -82,4 +83,3 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthContext);
-

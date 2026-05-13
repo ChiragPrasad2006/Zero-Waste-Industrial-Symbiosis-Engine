@@ -12,11 +12,12 @@ export const register = async (req, res, next) => {
       throw createError(400, 'Username, email, and password are required');
     }
 
+    const normalizedUsername = username.trim();
     const normalizedEmail = email.trim().toLowerCase();
     const emailLookup = hashEmail(normalizedEmail);
 
     const existing = await User.findOne({
-      $or: [{ username: username.trim() }, { emailHash: emailLookup }]
+      $or: [{ username: normalizedUsername }, { emailHash: emailLookup }]
     });
 
     if (existing) {
@@ -24,7 +25,7 @@ export const register = async (req, res, next) => {
     }
 
     const user = await User.create({
-      username: username.trim(),
+      username: normalizedUsername,
       emailHash: emailLookup,
       emailEncrypted: encryptEmail(normalizedEmail),
       password
@@ -39,9 +40,18 @@ export const register = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const emailLookup = hashEmail(email || '');
-    const user = await User.findOne({ emailHash: emailLookup });
+    const { email, username, password } = req.body;
+    const identifier = String(email || username || '').trim();
+
+    if (!identifier || !password) {
+      throw createError(400, 'Email or username and password are required');
+    }
+
+    const normalizedEmail = identifier.toLowerCase();
+    const emailLookup = hashEmail(normalizedEmail);
+    const user = await User.findOne({
+      $or: [{ emailHash: emailLookup }, { username: identifier }]
+    });
 
     if (!user || !(await user.comparePassword(password || ''))) {
       throw createError(401, 'Invalid email or password');
@@ -143,4 +153,3 @@ export const requestUpgrade = async (req, res, next) => {
     next(error);
   }
 };
-

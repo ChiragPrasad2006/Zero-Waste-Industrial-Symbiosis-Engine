@@ -3,10 +3,14 @@ import { useAuth } from './context/AuthContext.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import AuthPage from './pages/AuthPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
+import LoaderOverlay from './components/LoaderOverlay.jsx';
 
 const ProtectedRoute = ({ children }) => {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/auth" replace />;
+  const { token, loading } = useAuth();
+  if (token && loading) {
+    return <LoaderOverlay visible label="Loading your workspace..." />;
+  }
+  return token ? children : <Navigate to="/" replace />;
 };
 
 export default function App() {
@@ -25,4 +29,3 @@ export default function App() {
     </Routes>
   );
 }
-

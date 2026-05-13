@@ -62,7 +62,7 @@ export const getMessages = async (req, res, next) => {
     }
 
     const messages = await Message.find({ conversation: conversation._id })
-      .populate('sender', 'username')
+      .populate('sender', 'username profileImage')
       .sort({ createdAt: 1 });
 
     res.json({ messages });
@@ -87,7 +87,7 @@ export const sendMessage = async (req, res, next) => {
     conversation.lastMessageAt = new Date();
     await conversation.save();
 
-    const populated = await Message.findById(message._id).populate('sender', 'username');
+    const populated = await Message.findById(message._id).populate('sender', 'username profileImage');
     res.status(201).json({ message: populated });
   } catch (error) {
     next(error);

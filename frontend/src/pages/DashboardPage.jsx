@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useDelayedLoading } from '../hooks/useDelayedLoading.js';
@@ -12,14 +13,25 @@ const initialPostForm = {
   title: '',
   description: '',
   purpose: '',
-  priceMin: 0,
-  quantityValue: 0,
+  priceMin: '',
+  quantityValue: '',
   quantityUnit: 'kg',
-  imageUrl: '',
-  wasteAttributes: '{\n  "industryType": "Metal Works"\n}'
+  imageUrl: ''
 };
 
+const initialCategoryRequest = {
+  name: '',
+  description: ''
+};
+
+const Avatar = ({ user, className = '' }) => (
+  <div className={`avatar-shell ${className}`.trim()}>
+    {user?.profileImage ? <img src={user.profileImage} alt={user?.username} /> : <span>{user?.username?.[0]?.toUpperCase() || 'U'}</span>}
+  </div>
+);
+
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user, syncUser, logout, setUser, pendingUpgrade, setPendingUpgrade } = useAuth();
   const [activeTab, setActiveTab] = useState('marketplace');
   const [posts, setPosts] = useState([]);
@@ -31,9 +43,14 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [priceMinFilter, setPriceMinFilter] = useState('');
+  const [priceMaxFilter, setPriceMaxFilter] = useState('');
+  const [dateAdded, setDateAdded] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
   const [postForm, setPostForm] = useState(initialPostForm);
+  const [categoryRequestForm, setCategoryRequestForm] = useState(initialCategoryRequest);
   const [upgradeForm, setUpgradeForm] = useState({ paymentReference: '', months: 1 });
-  const [adminData, setAdminData] = useState({ pendingPosts: [], requests: [], users: [] });
+  const [adminData, setAdminData] = useState({ pendingPosts: [], requests: [], users: [], pendingCategories: [] });
   const [profileOpen, setProfileOpen] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -47,19 +64,27 @@ export default function DashboardPage() {
 
   const fetchMarketplace = async () => {
     const query = new URLSearchParams({ status: 'approved' });
+
     if (search) {
       query.set('search', search);
     }
     if (category) {
       query.set('category', category);
     }
+    if (priceMinFilter !== '') {
+      query.set('minPrice', priceMinFilter);
+    }
+    if (priceMaxFilter !== '') {
+      query.set('maxPrice', priceMaxFilter);
+    }
+    if (dateAdded) {
+      query.set('dateAdded', dateAdded);
+    }
+    if (sortBy) {
+      query.set('sort', sortBy);
+    }
 
-    const [postsData, categoryData, graphData] = await Promise.all([
-      api(`/posts?${query.toString()}`),
-      api('/posts/categories'),
-      api('/graph')
-    ]);
-
+    const [postsData, categoryData, graphData] = await Promise.all([api(`/posts?${query.toString()}`), api('/posts/categories'), api('/graph')]);
     setPosts(postsData.posts);
     setCategories(categoryData.categories);
     setGraph(graphData);
@@ -75,6 +100,7 @@ export default function DashboardPage() {
     if (user?.role !== 'admin') {
       return;
     }
+
     const data = await api('/admin/dashboard');
     setAdminData(data);
   };
@@ -82,9 +108,10 @@ export default function DashboardPage() {
   const boot = async () => {
     setLoading(true);
     setError('');
+
     try {
       await syncUser();
-      await Promise.all([fetchMarketplace(), fetchMyArea(), fetchAdmin()]);
+      await Promise.all([fetchMarketplace(), fetchMyArea()]);
     } catch (bootError) {
       setError(bootError.message);
     } finally {
@@ -97,19 +124,20 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    fetchMarketplace().catch(() => {});
+  }, [search, category, priceMinFilter, priceMaxFilter, dateAdded, sortBy]);
+
+  useEffect(() => {
     if (user?.role === 'admin') {
       fetchAdmin().catch(() => {});
     }
   }, [user?.role]);
 
   useEffect(() => {
-    fetchMarketplace().catch(() => {});
-  }, [search, category]);
-
-  useEffect(() => {
     if (!toast) {
       return undefined;
     }
+
     const timer = setTimeout(() => setToast(''), 3500);
     return () => clearTimeout(timer);
   }, [toast]);
@@ -133,8 +161,14 @@ export default function DashboardPage() {
     if (!selectedConversation || !user) {
       return null;
     }
+
     return selectedConversation.participants.find((item) => item.username !== user.username);
   }, [selectedConversation, user]);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   const contactSeller = async (post) => {
     const data = await api('/chat/conversations', {
@@ -151,19 +185,38 @@ export default function DashboardPage() {
     event.preventDefault();
     setSaving(true);
     setError('');
+
     try {
       await api('/posts', {
         method: 'POST',
         body: JSON.stringify({
           ...postForm,
           priceMin: Number(postForm.priceMin),
-          quantityValue: Number(postForm.quantityValue),
-          wasteAttributes: JSON.parse(postForm.wasteAttributes || '{}')
+          quantityValue: Number(postForm.quantityValue)
         })
       });
       setToast('Post submitted for admin review.');
       setPostForm(initialPostForm);
-      await fetchMyArea();
+      await Promise.all([fetchMyArea(), fetchMarketplace(), fetchAdmin()]);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitCategoryRequest = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+
+    try {
+      await api('/posts/categories/request', {
+        method: 'POST',
+        body: JSON.stringify(categoryRequestForm)
+      });
+      setCategoryRequestForm(initialCategoryRequest);
+      setToast('Custom category sent for admin approval.');
       await fetchAdmin();
     } catch (submitError) {
       setError(submitError.message);
@@ -176,6 +229,7 @@ export default function DashboardPage() {
     event.preventDefault();
     setSaving(true);
     setError('');
+
     try {
       const data = await api('/auth/upgrade-request', {
         method: 'POST',
@@ -198,14 +252,14 @@ export default function DashboardPage() {
     if (!messageText.trim() || !selectedConversation) {
       return;
     }
+
     await api(`/chat/conversations/${selectedConversation._id}/messages`, {
       method: 'POST',
       body: JSON.stringify({ text: messageText })
     });
     setMessageText('');
-    const data = await api(`/chat/conversations/${selectedConversation._id}/messages`);
-    setMessages(data.messages);
-    const chats = await api('/chat/conversations');
+    const [messageData, chats] = await Promise.all([api(`/chat/conversations/${selectedConversation._id}/messages`), api('/chat/conversations')]);
+    setMessages(messageData.messages);
     setConversations(chats.conversations);
   };
 
@@ -253,11 +307,21 @@ export default function DashboardPage() {
     await Promise.all([syncUser(), fetchAdmin()]);
   };
 
+  const reviewCategory = async (requestId, status) => {
+    await api(`/admin/categories/${requestId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    });
+    setToast(`Category request ${status}.`);
+    await Promise.all([fetchMarketplace(), fetchAdmin()]);
+  };
+
   const handlePostImage = (event) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
+
     const reader = new FileReader();
     reader.onload = () => {
       setPostForm((prev) => ({
@@ -271,17 +335,18 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-page">
       <LoaderOverlay visible={showLoader} />
+
       <header className="topbar">
-        <div>
+        <div className="topbar__copy">
           <h1>Zero-Waste Marketplace</h1>
-          <p>Industrial symbiosis for responsible consumption and production.</p>
+          <p>Industrial symbiosis for responsible consumption, practical reuse, and greener supplier discovery.</p>
         </div>
         <div className="topbar__right">
           <button className="profile-pill" onClick={() => setProfileOpen(true)}>
-            {user?.profileImage ? <img src={user.profileImage} alt={user.username} /> : <span>{user?.username?.[0]?.toUpperCase()}</span>}
+            <Avatar user={user} className="avatar-shell--sm" />
             <strong>{user?.username}</strong>
           </button>
-          <button className="ghost-btn" onClick={logout}>
+          <button className="ghost-btn" onClick={handleLogout}>
             Logout
           </button>
         </div>
@@ -304,20 +369,34 @@ export default function DashboardPage() {
             <section className="hero-panel">
               <div>
                 <h2>Live Industrial Exchange Network</h2>
-                <p>Glowing links show potential waste-resource partnerships. Brighter nodes represent stronger recycling participation.</p>
+                <p>Glowing links show potential waste-resource partnerships between active industry participants. Brighter nodes represent stronger recycling participation.</p>
               </div>
               <GraphView data={graph} />
             </section>
 
-            <section className="toolbar">
-              <input placeholder="Search posts, waste types, purpose..." value={search} onChange={(e) => setSearch(e.target.value)} />
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <section className="toolbar toolbar--filters">
+              <input placeholder="Search posts, waste types, purpose..." value={search} onChange={(event) => setSearch(event.target.value)} />
+              <select value={category} onChange={(event) => setCategory(event.target.value)}>
                 <option value="">All categories</option>
                 {categories.map((item) => (
                   <option key={item} value={item}>
                     {item}
                   </option>
                 ))}
+              </select>
+              <input type="number" min="0" placeholder="Min price" value={priceMinFilter} onChange={(event) => setPriceMinFilter(event.target.value)} />
+              <input type="number" min="0" placeholder="Max price" value={priceMaxFilter} onChange={(event) => setPriceMaxFilter(event.target.value)} />
+              <select value={dateAdded} onChange={(event) => setDateAdded(event.target.value)}>
+                <option value="">Any date</option>
+                <option value="today">Added today</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+              </select>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="price-low">Price: low to high</option>
+                <option value="price-high">Price: high to low</option>
               </select>
             </section>
 
@@ -350,10 +429,10 @@ export default function DashboardPage() {
                         <input
                           placeholder="Payment reference / transaction id"
                           value={upgradeForm.paymentReference}
-                          onChange={(e) => setUpgradeForm({ ...upgradeForm, paymentReference: e.target.value })}
+                          onChange={(event) => setUpgradeForm({ ...upgradeForm, paymentReference: event.target.value })}
                           required
                         />
-                        <select value={upgradeForm.months} onChange={(e) => setUpgradeForm({ ...upgradeForm, months: e.target.value })}>
+                        <select value={upgradeForm.months} onChange={(event) => setUpgradeForm({ ...upgradeForm, months: event.target.value })}>
                           <option value="1">1 Month - Rs.100</option>
                           <option value="3">3 Months - Rs.300</option>
                         </select>
@@ -364,39 +443,63 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              <div className="soft-card">
-                <h2>Upload Post</h2>
-                {superiorActive ? (
-                  <form className="upload-form" onSubmit={submitPost}>
-                    <select value={postForm.category} onChange={(e) => setPostForm({ ...postForm, category: e.target.value })}>
-                      <option>Excess Heat</option>
-                      <option>Steam Waste</option>
-                      <option>Scrap Aluminum</option>
-                      <option>Chemical Sludge</option>
-                      <option>Packaging Waste</option>
-                      <option>Fly Ash</option>
-                    </select>
-                    <input placeholder="Heading / Title" value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} required />
-                    <textarea placeholder="Purpose / Description" rows="3" value={postForm.description} onChange={(e) => setPostForm({ ...postForm, description: e.target.value })} required />
-                    <input placeholder="Buyer use case / purpose" value={postForm.purpose} onChange={(e) => setPostForm({ ...postForm, purpose: e.target.value })} required />
-                    <div className="split-row">
-                      <input type="number" min="0" placeholder="Minimum price" value={postForm.priceMin} onChange={(e) => setPostForm({ ...postForm, priceMin: e.target.value })} required />
-                      <input type="number" min="0" placeholder="Quantity" value={postForm.quantityValue} onChange={(e) => setPostForm({ ...postForm, quantityValue: e.target.value })} required />
-                      <input placeholder="Metric unit" value={postForm.quantityUnit} onChange={(e) => setPostForm({ ...postForm, quantityUnit: e.target.value })} required />
-                    </div>
-                    <input placeholder="Image URL or small data URL" value={postForm.imageUrl} onChange={(e) => setPostForm({ ...postForm, imageUrl: e.target.value })} />
-                    <input type="file" accept="image/*" onChange={handlePostImage} />
-                    <textarea
-                      rows="6"
-                      placeholder='Extra attributes JSON e.g. {"temperature":"high","purity":"85%"}'
-                      value={postForm.wasteAttributes}
-                      onChange={(e) => setPostForm({ ...postForm, wasteAttributes: e.target.value })}
+              <div className="panel-stack">
+                <div className="soft-card">
+                  <h2>Upload Post</h2>
+                  {superiorActive ? (
+                    <form className="upload-form" onSubmit={submitPost}>
+                      <select value={postForm.category} onChange={(event) => setPostForm({ ...postForm, category: event.target.value })}>
+                        {categories.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                      <input placeholder="Heading / Title" value={postForm.title} onChange={(event) => setPostForm({ ...postForm, title: event.target.value })} required />
+                      <textarea placeholder="Purpose / Description" rows="3" value={postForm.description} onChange={(event) => setPostForm({ ...postForm, description: event.target.value })} required />
+                      <input placeholder="Buyer use case / purpose" value={postForm.purpose} onChange={(event) => setPostForm({ ...postForm, purpose: event.target.value })} required />
+                      <div className="split-row split-row--labels">
+                        <label className="field-stack">
+                          <span>Rate / Unit*</span>
+                          <input type="number" min="0" placeholder="Enter price" value={postForm.priceMin} onChange={(event) => setPostForm({ ...postForm, priceMin: event.target.value })} required />
+                        </label>
+                        <label className="field-stack">
+                          <span>Quantity*</span>
+                          <input type="number" min="0" placeholder="Enter quantity" value={postForm.quantityValue} onChange={(event) => setPostForm({ ...postForm, quantityValue: event.target.value })} required />
+                        </label>
+                        <label className="field-stack">
+                          <span>Metric Unit*</span>
+                          <input placeholder="kg, ton, litre..." value={postForm.quantityUnit} onChange={(event) => setPostForm({ ...postForm, quantityUnit: event.target.value })} required />
+                        </label>
+                      </div>
+                      <input placeholder="Image URL or small data URL" value={postForm.imageUrl} onChange={(event) => setPostForm({ ...postForm, imageUrl: event.target.value })} />
+                      <input type="file" accept="image/*" onChange={handlePostImage} />
+                      <button disabled={saving}>{saving ? 'Submitting...' : 'Upload for Review'}</button>
+                    </form>
+                  ) : (
+                    <div className="empty-state">Upgrade to superior to unlock post uploads and premium marketplace visibility.</div>
+                  )}
+                </div>
+
+                <div className="soft-card">
+                  <h2>Request A Custom Category</h2>
+                  <p>Need a niche material type that is not listed yet? Send it for admin approval so future uploads stay clean and consistent.</p>
+                  <form className="upload-form" onSubmit={submitCategoryRequest}>
+                    <input
+                      placeholder="Category name"
+                      value={categoryRequestForm.name}
+                      onChange={(event) => setCategoryRequestForm({ ...categoryRequestForm, name: event.target.value })}
+                      required
                     />
-                    <button disabled={saving}>{saving ? 'Submitting...' : 'Upload for Review'}</button>
+                    <textarea
+                      rows="3"
+                      placeholder="Explain where this category fits in the circular exchange"
+                      value={categoryRequestForm.description}
+                      onChange={(event) => setCategoryRequestForm({ ...categoryRequestForm, description: event.target.value })}
+                    />
+                    <button disabled={saving}>{saving ? 'Sending...' : 'Submit Category Request'}</button>
                   </form>
-                ) : (
-                  <div className="empty-state">Upgrade to superior to unlock post uploads and premium marketplace visibility.</div>
-                )}
+                </div>
               </div>
             </section>
 
@@ -417,33 +520,50 @@ export default function DashboardPage() {
                 const partner = conversation.participants.find((item) => item.username !== user.username);
                 return (
                   <button key={conversation._id} className={selectedConversation?._id === conversation._id ? 'active' : ''} onClick={() => setSelectedConversation(conversation)}>
-                    <strong>{partner?.username || 'Seller'}</strong>
-                    <span>{conversation.post?.title}</span>
+                    <div className="conversation-list__item">
+                      <Avatar user={partner} className="avatar-shell--sm" />
+                      <div>
+                        <strong>{partner?.username || 'Seller'}</strong>
+                        <span>{conversation.post?.title}</span>
+                      </div>
+                    </div>
                   </button>
                 );
               })}
             </aside>
+
             <section className="chat-panel">
               {selectedConversation ? (
                 <>
                   <div className="chat-header">
-                    <h3>{selectedPartner?.username}</h3>
-                    <p>{selectedConversation.post?.title}</p>
+                    <div className="chat-header__profile">
+                      <Avatar user={selectedPartner} />
+                      <div>
+                        <h3>{selectedPartner?.username}</h3>
+                        <p>{selectedConversation.post?.title}</p>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="message-list">
                     {messages.map((message) => (
-                      <div key={message._id} className={`message ${message.sender.username === user.username ? 'message--me' : ''}`}>
-                        <span>{message.text}</span>
+                      <div key={message._id} className={`message-row ${message.sender.username === user.username ? 'message-row--me' : ''}`}>
+                        <Avatar user={message.sender} className="avatar-shell--sm" />
+                        <div className={`message ${message.sender.username === user.username ? 'message--me' : ''}`}>
+                          <strong>{message.sender.username}</strong>
+                          <span>{message.text}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
+
                   <form className="chat-form" onSubmit={sendChat}>
-                    <input placeholder="Type your message..." value={messageText} onChange={(e) => setMessageText(e.target.value)} />
+                    <input placeholder="Type your message..." value={messageText} onChange={(event) => setMessageText(event.target.value)} />
                     <button>Send</button>
                   </form>
                 </>
               ) : (
-                <div className="empty-state">Pick a seller conversation or click “Contact Seller” from any post.</div>
+                <div className="empty-state">Pick a seller conversation or click "Contact Seller" from any post.</div>
               )}
             </section>
           </section>
@@ -453,16 +573,9 @@ export default function DashboardPage() {
           <section className="about-grid">
             <div className="soft-card">
               <h2>About The Platform</h2>
-              <p>This platform supports circular economy collaboration between factories by helping one industry's waste become another industry's input.</p>
-              <p>MongoDB is used because industrial waste listings can vary massively in structure, which makes flexible document storage ideal for category-specific attributes.</p>
-            </div>
-            <div className="soft-card">
-              <h2>Suggested Better Alternatives</h2>
-              <ul>
-                <li>Use Razorpay subscriptions for real monthly payments instead of manual admin confirmation.</li>
-                <li>Use Cloudinary for image storage if you deploy publicly.</li>
-                <li>Use WebSockets later for fully real-time chat if your hosting allows it.</li>
-              </ul>
+              <p>This platform helps manufacturers, recyclers, and industrial buyers convert reusable waste streams into traceable marketplace opportunities.</p>
+              <p>Users can discover approved listings, message the correct seller profile directly, monitor marketplace activity, and build more sustainable supply relationships through a single workflow.</p>
+              <p>Admins moderate listings, review upload upgrades, and approve new categories so the data stays useful as the exchange network expands.</p>
             </div>
           </section>
         )}
@@ -492,15 +605,13 @@ export default function DashboardPage() {
                 <div key={request._id} className="request-row">
                   <div>
                     <strong>{request.user?.username}</strong>
-                    <p>
-                      Ref: {request.paymentReference} • Amount: Rs.{request.amount}
-                    </p>
+                    <p>Ref: {request.paymentReference} • Amount: Rs.{request.amount}</p>
                   </div>
                   <label className="check-row">
                     <input
                       type="checkbox"
                       checked={Boolean(paymentChecks[request._id])}
-                      onChange={(e) => setPaymentChecks({ ...paymentChecks, [request._id]: e.target.checked })}
+                      onChange={(event) => setPaymentChecks({ ...paymentChecks, [request._id]: event.target.checked })}
                     />
                     Payment done
                   </label>
@@ -512,6 +623,28 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="soft-card">
+              <h2>Custom Category Requests</h2>
+              {adminData.pendingCategories.map((request) => (
+                <div key={request._id} className="request-row">
+                  <div>
+                    <strong>{request.name}</strong>
+                    <p>
+                      Requested by {request.requestedBy?.username} on {new Date(request.createdAt).toLocaleDateString()}
+                    </p>
+                    {request.description && <p>{request.description}</p>}
+                  </div>
+                  <div className="admin-actions">
+                    <button onClick={() => reviewCategory(request._id, 'approved')}>Approve</button>
+                    <button className="ghost-btn" onClick={() => reviewCategory(request._id, 'rejected')}>
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!adminData.pendingCategories.length && <div className="empty-state">No custom category requests are waiting right now.</div>}
             </div>
           </section>
         )}
