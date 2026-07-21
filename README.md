@@ -5,8 +5,8 @@ A lightweight full-stack B2B marketplace for industrial waste exchange, built fo
 ## Stack
 
 - Frontend: React + Vite + D3.js
-- Backend: Node.js + Express
-- Database: MongoDB + Mongoose
+- Backend: Python + FastAPI
+- Database: MongoDB + PyMongo
 - Auth: JWT + bcrypt
 
 ## Features
@@ -26,19 +26,19 @@ A lightweight full-stack B2B marketplace for industrial waste exchange, built fo
 
 ## Project Structure
 
-- `backend/` Express API
+- `backend/` FastAPI API
 - `frontend/` React app
 
 ## Quick Start
 
 ### 1. Backend
 
-Create `backend/.env` from `backend/.env.example`, then:
+`backend/.env` is optional. The backend uses local defaults for development, and you can override them with environment variables or a local `backend/.env` when needed.
 
 ```bash
 cd backend
-npm install
-npm run dev
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 5000
 ```
 
 ### 2. Frontend
@@ -55,7 +55,7 @@ Admins are not created through public signup.
 
 ```bash
 cd backend
-npm run create-admin -- --email admin@example.com --username admin --password StrongPass123!
+python -m app.scripts.create_admin --email admin@example.com --username admin --password StrongPass123!
 ```
 
 ## Suggested Improvement For Real Payments
@@ -67,4 +67,3 @@ For a real deployment, replace manual payment confirmation with:
 - Cloudinary image hosting for smaller app servers
 
 For a college project, the included manual admin approval flow is simpler and easier to demo.
-
